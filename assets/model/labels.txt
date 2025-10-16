@@ -1,0 +1,5 @@
+Downy_Mildew
+Healthy
+Leaf_Blight
+Powdery_Mildew
+
