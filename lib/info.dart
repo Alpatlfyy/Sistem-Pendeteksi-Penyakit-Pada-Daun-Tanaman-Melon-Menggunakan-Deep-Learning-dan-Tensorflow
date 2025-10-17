@@ -1,7 +1,62 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
-class InfoPage extends StatelessWidget {
+import 'change_password.dart';
+import 'login.dart';
+
+class InfoPage extends StatefulWidget {
   const InfoPage({super.key});
+
+  @override
+  State<InfoPage> createState() => _InfoPageState();
+}
+
+class _InfoPageState extends State<InfoPage> {
+  final user = FirebaseAuth.instance.currentUser;
+  final database = FirebaseDatabase.instance.ref();
+
+  File? _profileImage;
+  String? fullName;
+  String? email;
+
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    if (user == null) return;
+    final ref = FirebaseDatabase.instance.ref("users/${user!.uid}");
+    final snapshot = await ref.get();
+    if (snapshot.exists) {
+      final data = snapshot.value as Map;
+      setState(() {
+        fullName = data['fullName'];
+        email = data['email'];
+      });
+    } else {
+      setState(() {
+        email = user!.email;
+        fullName = "Pengguna";
+      });
+    }
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedImage = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedImage != null) {
+      setState(() {
+        _profileImage = File(pickedImage.path);
+      });
+      // TODO: upload ke Firebase Storage kalau ingin disimpan permanen
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -10,10 +65,7 @@ class InfoPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: primaryColor,
-        title: const Text(
-          "Tentang & Bantuan",
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text("Profile & Info", style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(
@@ -21,18 +73,78 @@ class InfoPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // About App Section
+            // ===================== PROFILE SECTION =====================
+            Center(
+              child: Column(
+                children: [
+                  GestureDetector(
+                    onTap: _pickImage,
+                    child: Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 55,
+                          backgroundColor: Colors.grey[200],
+                          backgroundImage: _profileImage != null
+                              ? FileImage(_profileImage!)
+                              : null,
+                          child: _profileImage == null
+                              ? const Icon(Icons.person, size: 60, color: Colors.grey)
+                              : null,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                              color: primaryColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.edit, color: Colors.white, size: 18),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    fullName ?? "Loading...",
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  Text(email ?? "Loading...", style: const TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const ChangePasswordPage()),
+                      );
+                    },
+                    icon: const Icon(Icons.lock_outline, color: Colors.white),
+                    label: const Text("Change Password", style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 30),
+
+            // ===================== ABOUT APP SECTION =====================
             _buildSectionTitle("Tentang Aplikasi", primaryColor),
             const SizedBox(height: 8),
             const Text(
               "This app helps detect melon leaf diseases using AI to support farmers’ crop health. "
-              "Our advanced technology analyzes leaf conditions and provides instant diagnosis with "
-              "treatment recommendations.",
+                  "Our advanced technology analyzes leaf conditions and provides instant diagnosis with "
+                  "treatment recommendations.",
               style: TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 20),
 
-            // How to Use Section
+            // ===================== HOW TO USE =====================
             _buildSectionTitle("Cara Menggunakan", primaryColor),
             const SizedBox(height: 8),
             _buildStep(Icons.camera_alt, "Step 1", "Take a photo of the melon leaf with the camera"),
@@ -40,7 +152,7 @@ class InfoPage extends StatelessWidget {
             _buildStep(Icons.medical_services, "Step 3", "Follow the treatment suggestions that appear"),
             const SizedBox(height: 20),
 
-            // Key Features Section
+            // ===================== FEATURES =====================
             _buildSectionTitle("Key Features", primaryColor),
             const SizedBox(height: 8),
             _buildFeature(Icons.bolt, "Real-time disease detection"),
@@ -49,12 +161,11 @@ class InfoPage extends StatelessWidget {
             _buildFeature(Icons.wifi_off, "Offline functionality"),
             const SizedBox(height: 20),
 
-            // Contact & Support Section
+            // ===================== CONTACT =====================
             _buildSectionTitle("Contact & Support", primaryColor),
             const SizedBox(height: 8),
             const Text(
-              "Contact the development team for further assistance. We’re here to help "
-              "you get the most out of your melon disease detection app.",
+              "Contact the development team for further assistance. We’re here to help you get the most out of your app.",
               style: TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 10),
@@ -63,26 +174,48 @@ class InfoPage extends StatelessWidget {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                onPressed: () {
-                  // Tambahkan aksi untuk tombol Contact Us
-                },
+                onPressed: () {},
                 child: const Text("Contact Us", style: TextStyle(color: Colors.white)),
               ),
             ),
             const SizedBox(height: 20),
 
-            // App Information Section
+            // ===================== APP INFO =====================
             _buildSectionTitle("App Information", primaryColor),
             const SizedBox(height: 8),
             _buildInfoRow("Version", "1.2.0"),
             _buildInfoRow("Size", "45.2 MB"),
             _buildInfoRow("Last Updated", "November 15, 2025"),
             _buildInfoRow("Developer", "AgriTech Solutions"),
+
+            const SizedBox(height: 30),
+
+            // ===================== LOGOUT BUTTON =====================
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: () async {
+                  await FirebaseAuth.instance.signOut();
+                  if (context.mounted) {
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LoginPage()),
+                          (route) => false,
+                    );
+                  }
+                },
+                icon: const Icon(Icons.logout, color: Colors.white),
+                label: const Text("Logout", style: TextStyle(color: Colors.white)),
+              ),
+            ),
           ],
         ),
       ),
@@ -90,14 +223,8 @@ class InfoPage extends StatelessWidget {
   }
 
   Widget _buildSectionTitle(String title, Color color) {
-    return Text(
-      title,
-      style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-        color: color,
-      ),
-    );
+    return Text(title,
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color));
   }
 
   Widget _buildStep(IconData icon, String title, String subtitle) {

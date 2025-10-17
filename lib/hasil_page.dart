@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
-// Kelas untuk membawa hasil dari Gemini
 class DetectionResult {
   final String rawGeminiOutput;
-  // Anda bisa menambahkan properti lain di sini jika Anda ingin mem-parsing hasil AI
+  final String method; // "CNN" atau "Gemini"
 
-  DetectionResult({required this.rawGeminiOutput});
+  DetectionResult({
+    required this.rawGeminiOutput,
+    required this.method,
+  });
 }
 
 class HasilPage extends StatelessWidget {
@@ -13,27 +15,35 @@ class HasilPage extends StatelessWidget {
 
   const HasilPage({super.key, required this.result});
 
-  // Helper untuk memformat output Gemini agar mudah dibaca
-  // Ini adalah pendekatan sederhana. Untuk hasil yang lebih terstruktur,
-  // Anda harus menggunakan response schema (JSON) atau parsing yang lebih canggih.
-  String _formatGeminiOutput(String text) {
-    // Ganti newline dengan dua newline untuk paragraf di UI
-    text = text.replaceAll('\n', '\n\n');
-    // Hilangkan spasi berlebih
-    text = text.trim();
-    return text;
+  // Bersihkan Markdown dari teks AI
+  String _cleanMarkdown(String text) {
+    String cleaned = text;
+
+    // Hapus heading Markdown (#, ##, ###)
+    cleaned = cleaned.replaceAll(RegExp(r'^\s*#{1,6}\s*', multiLine: true), '');
+    // Hapus bold/italic (** , __ , *, _)
+    cleaned = cleaned.replaceAll(RegExp(r'(\*\*|__|\*|_)'), '');
+    // Hapus strikethrough (~~)
+    cleaned = cleaned.replaceAll('~~', '');
+    // Hilangkan baris kosong berlebih
+    cleaned = cleaned.replaceAll(RegExp(r'\n{2,}'), '\n\n');
+    return cleaned.trim();
   }
 
   @override
   Widget build(BuildContext context) {
     const Color primaryColor = Color(0xFF064E3B);
-    final formattedResult = _formatGeminiOutput(result.rawGeminiOutput);
+
+    // Bersihkan teks sebelum ditampilkan
+    final String displayText = result.method == "CNN"
+        ? result.rawGeminiOutput
+        : _cleanMarkdown(result.rawGeminiOutput);
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: primaryColor,
         title: const Text(
-          "Hasil Deteksi", // Ganti ke Bahasa Indonesia
+          "Hasil Deteksi",
           style: TextStyle(color: Colors.white),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -45,8 +55,6 @@ class HasilPage extends StatelessWidget {
           children: [
             _buildSectionTitle("Diagnosa AI", primaryColor),
             const SizedBox(height: 12),
-            
-            // --- Menampilkan Output Gemini Mentah ---
             Card(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               elevation: 2,
@@ -55,40 +63,46 @@ class HasilPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      "Analisis dari Model Gemini 2.5 Flash:",
-                      style: TextStyle(
+                    Text(
+                      result.method == "CNN"
+                          ? "Analisis Cepat Offline (CNN):"
+                          : "Analisis dari Model Gemini 2.5 Flash:",
+                      style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: primaryColor,
                       ),
                     ),
                     const Divider(height: 20),
-                    // Tampilkan hasil teks yang diformat
                     Text(
-                      formattedResult,
-                      style: const TextStyle(fontSize: 14),
+                      displayText,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: result.method == "CNN" ? Colors.black : Colors.black,
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-            // ----------------------------------------
-            
+
             const SizedBox(height: 20),
-            _buildSectionTitle("Catatan", primaryColor),
-            const SizedBox(height: 8),
-            const Text(
-              "Hasil ini dihasilkan oleh model AI dan harus digunakan sebagai referensi. Konsultasikan dengan ahli pertanian untuk konfirmasi.",
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
+
+            if (result.method == "Gemini") ...[
+              _buildSectionTitle("Catatan", primaryColor),
+              const SizedBox(height: 8),
+              const Text(
+                "Hasil ini dihasilkan oleh model AI dan harus digunakan sebagai referensi. "
+                    "Konsultasikan dengan ahli pertanian untuk konfirmasi.",
+                style: TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  // Helper methods tetap sama
   Widget _buildSectionTitle(String title, Color color) {
     return Text(
       title,
@@ -100,7 +114,3 @@ class HasilPage extends StatelessWidget {
     );
   }
 }
-
-// Hapus widget _buildResultCard, _buildStep, dan konten lama karena sudah diganti
-// dengan tampilan hasil Gemini mentah.
-// (Tidak perlu menyertakan kode yang dihapus di sini, hanya sebagai catatan)

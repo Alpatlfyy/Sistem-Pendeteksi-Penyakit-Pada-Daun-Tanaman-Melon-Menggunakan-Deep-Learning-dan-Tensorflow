@@ -3,15 +3,22 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:camera/camera.dart'; 
+import 'package:camera/camera.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'hasil_page.dart';
+
+
 
 // Import service TFLite yang baru dibuat
-import 'tflite_service.dart'; 
+import 'tflite_service.dart';
 import 'hasil_page.dart'; // Import HasilPage
 
 // --- PENTING: GANTI DENGAN API KEY ANDA ---
-const apiKey = "AIzaSyDhmVv9E88sPBeYB3mem28yUPVg_EnrDHw"; 
+const apiKey = "AIzaSyDhmVv9E88sPBeYB3mem28yUPVg_EnrDHw"; // GANTI DENGAN API KEY ANDA
 
 // Asumsi: cameras diinisialisasi di main/sebelum navigasi
 late List<CameraDescription> cameras;
@@ -26,27 +33,36 @@ class DetectorPage extends StatefulWidget {
 class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver {
   File? _image; // Gambar yang sedang dipratinjau
   final ImagePicker _picker = ImagePicker();
-  
+
   // Camera & Gemini State
   CameraController? _cameraController;
   bool _isCameraInitialized = false;
   bool _isAnalyzing = false; // Status untuk loading saat AI bekerja
-  final model = GenerativeModel(model: 'gemini-2.5-flash', apiKey: apiKey); // Model Gemini
-  
+  final model = GenerativeModel(model: 'gemini-2.5-flash', apiKey: apiKey);
+
   // --- TFLite State ---
-  late TFLiteService _tfliteService; 
-  bool _isTfliteInitialized = false; 
+  late TFLiteService _tfliteService;
+  bool _isTfliteInitialized = false;
   // --------------------
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _initializeFirebase(); // 🔹 Tambahkan ini
     _initializeCamera();
-    _initializeTFLite(); // <--- INISIALISASI TFLITE
+    _initializeTFLite();
   }
-  
-  // --- 1.1 Inisialisasi TFLite ---
+
+  Future<void> _initializeFirebase() async {
+    try {
+      await Firebase.initializeApp();
+      print("✅ Firebase berhasil diinisialisasi");
+    } catch (e) {
+      print("❌ Gagal inisialisasi Firebase: $e");
+    }
+  }
+
   Future<void> _initializeTFLite() async {
     _tfliteService = TFLiteService();
     try {
@@ -59,9 +75,10 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
     } catch (e) {
       print("Error inisialisasi TFLite: $e");
       if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text("Error TFLite: Gagal memuat model. Lihat konsol.")),
-         );
+        ScaffoldMessenger.of(context).showSnackBar(
+          // Teks UI: Sudah Bahasa Indonesia
+          const SnackBar(content: Text("Error TFLite: Gagal memuat model.")),
+        );
       }
     }
   }
@@ -72,10 +89,10 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
     if (cameraController == null || !cameraController.value.isInitialized) return;
     if (state == AppLifecycleState.inactive) {
       cameraController.dispose();
-      _tfliteService.dispose(); // Tutup TFLite
+      _tfliteService.dispose();
     } else if (state == AppLifecycleState.resumed) {
       _initializeCamera();
-      _initializeTFLite(); // Muat ulang TFLite
+      _initializeTFLite();
     }
   }
 
@@ -83,41 +100,62 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _cameraController?.dispose();
-    _tfliteService.dispose(); // <--- DISPOSE TFLITE
+    _tfliteService.dispose();
     super.dispose();
   }
 
-  // --- 1.2 Inisialisasi Kamera (Kode lama) ---
   Future<void> _initializeCamera() async {
-     // ... (kode inisialisasi kamera yang sudah ada)
-     try {
-       cameras = await availableCameras();
-       final CameraDescription backCamera = cameras.firstWhere(
-         (camera) => camera.lensDirection == CameraLensDirection.back,
-         orElse: () => cameras.first,
-       );
+    try {
+      cameras = await availableCameras();
+      final CameraDescription backCamera = cameras.firstWhere(
+            (camera) => camera.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
 
-       _cameraController = CameraController(
-         backCamera,
-         ResolutionPreset.medium, 
-         enableAudio: false,
-       );
+      _cameraController = CameraController(
+        backCamera,
+        ResolutionPreset.high,
+        enableAudio: false,
+      );
 
-       await _cameraController!.initialize();
-       if (!mounted) return;
+      await _cameraController!.initialize();
+      if (!mounted) return;
 
-       setState(() {
-         _isCameraInitialized = true;
-       });
-     } on CameraException catch (e) {
-       print("Camera Error: $e");
-       setState(() {
-         _isCameraInitialized = false;
-       });
-     }
+      setState(() {
+        _isCameraInitialized = true;
+      });
+    } on CameraException catch (e) {
+      print("Camera Error: $e");
+      setState(() {
+        _isCameraInitialized = false;
+      });
+    }
   }
-  
-  // --- 2.1 Fungsi Deteksi Gemini & Navigasi (AI Generatif - Online) ---
+
+  // Tambahkan fungsi ini di _DetectorPageState
+  String _cleanResultText(String rawText) {
+    String cleaned = rawText;
+
+    // 1️⃣ Hapus semua heading Markdown, misal ##, ###, #### di awal baris
+    cleaned = cleaned.replaceAll(RegExp(r'^\s*#{1,6}\s*', multiLine: true), '');
+
+    // 2️⃣ Hapus semua bold atau italic Markdown **, __, *, _
+    cleaned = cleaned.replaceAll(RegExp(r'(\*\*|__|\*|_)'), '');
+
+    // 3️⃣ Hapus strikethrough ~~
+    cleaned = cleaned.replaceAll('~~', '');
+
+    // 4️⃣ Bersihkan baris kosong berlebih
+    cleaned = cleaned.replaceAll(RegExp(r'\n{2,}'), '\n');
+
+    // 5️⃣ Trim spasi di awal/akhir
+    cleaned = cleaned.trim();
+
+    return cleaned;
+  }
+
+
+
   Future<void> _performDetectionGemini() async {
     if (_image == null || _isAnalyzing) return;
 
@@ -126,35 +164,69 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
     });
 
     try {
-      const String prompt = 
-          "Identifikasi penyakit pada daun ini (melon/tanaman terkait). Jelaskan gejalanya, penyebabnya, dan berikan saran penanganan/pencegahan secara detail dan terstruktur. Gunakan Bahasa Indonesia.";
+      const String prompt = """
+Sebagai ahli botani, analisis gambar daun melon ini.
+Berikan respons dalam format Markdown yang rapi dan jelas. Gunakan emoji di setiap judul.
+Jika gambar tidak jelas, bukan daun, atau sehat, beritahu dengan sopan.
+Jika ada penyakit, ikuti format ini dengan ketat:
+
+**🌿 Nama Penyakit**
+*Nama ilmiah penyakit (jika relevan)*
+
+**📋 Gejala Utama**
+- Jelaskan gejala visual yang paling umum secara poin.
+- Tambahkan poin gejala lain jika ada.
+
+**🔬 Penyebab & Pemicu**
+Jelaskan secara singkat apa yang menyebabkan penyakit ini (misalnya jamur, bakteri, atau kondisi lingkungan).
+
+**💊 Rekomendasi Penanganan**
+1.  **Langkah Awal:** Berikan langkah pertama yang paling penting dan mudah dilakukan.
+2.  **Perawatan Lanjutan:** Jelaskan metode perawatan lebih lanjut (misalnya penggunaan fungisida/pestisida spesifik).
+3.  **Metode Organik:** Berikan alternatif penanganan organik jika memungkinkan.
+
+**🛡️ Tindakan Pencegahan**
+1.  **Pencegahan 1:** Berikan tips pencegahan yang paling efektif.
+2.  **Pencegahan 2:** Tambahkan tips lain.
+
+---
+*Disclaimer: Analisis ini dihasilkan oleh AI sebagai panduan awal. Konsultasikan dengan ahli pertanian untuk diagnosis pasti.*
+""";
 
       final Uint8List bytes = await _image!.readAsBytes();
-      final String fileExtension = _image!.path.split('.').last.toLowerCase();
-      String mimeType = fileExtension == 'png' ? 'image/png' : 'image/jpeg';
-      
-      final List<Part> parts = [
+      final String mimeType = _image!.path.endsWith('.png') ? 'image/png' : 'image/jpeg';
+
+      final content = Content.multi([
         TextPart(prompt),
         DataPart(mimeType, bytes),
-      ];
-      
-      final content = Content.multi(parts);
-      
-      // Panggil Gemini API
+      ]);
+
       final response = await model.generateContent([content]);
-      final geminiResultText = response.text ?? "Maaf, diagnosis gagal mendapatkan respon.";
-      
-      // Navigasi ke Halaman Hasil
+      final geminiResultText = response.text ?? "Maaf, diagnosis gagal mendapatkan respons.";
+
+      // Bersihkan Markdown
+      final cleanedResult = _cleanResultText(geminiResultText);
+
+      // Simpan ke Realtime Database
+      await _saveDetectionToRealtimeDB(
+        method: "Gemini",
+        label: cleanedResult,
+        confidence: 1.0,
+      );
+
       if (mounted) {
+        // Tampilkan hasil bersih
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => HasilPage(
-              result: DetectionResult(rawGeminiOutput: geminiResultText),
+              result: DetectionResult(
+                rawGeminiOutput: geminiResultText,
+                method: "Gemini",
+              ),
             ),
           ),
         );
       }
-      
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -162,59 +234,116 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
         );
       }
     } finally {
-      setState(() {
-        _isAnalyzing = false;
-        _image = null; // Hapus preview setelah navigasi
-      });
+      if (mounted) {
+        setState(() {
+          _isAnalyzing = false;
+          _image = null;
+        });
+      }
     }
   }
-  
-  // --- 2.2 Fungsi Deteksi CNN & Navigasi (TFLite - Offline) ---
+
   Future<void> _performDetectionCNN() async {
-     if (_image == null || _isAnalyzing || !_isTfliteInitialized) return;
-     
-     setState(() {
-       _isAnalyzing = true;
-     });
-     
-     try {
-       final String cnnResult = await _tfliteService.runInference(_image!);
-       
-       // Navigasi ke Halaman Hasil dengan output TFLite
-       if (mounted) {
-         await Navigator.of(context).push(
-           MaterialPageRoute(
-             builder: (context) => HasilPage(
-               // Gabungkan hasil TFLite dengan prompt yang lebih baik untuk hasil halaman
-               result: DetectionResult(rawGeminiOutput: "## Hasil Klasifikasi CNN (Offline)\n\n$cnnResult\n\n---\n*Gunakan tombol 'Deteksi Gemini' jika Anda membutuhkan penjelasan, gejala, dan saran penanganan yang lebih detail dan akurat.*"),
-             ),
-           ),
-         );
-       }
-     } catch (e) {
-       if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text("Error Deteksi CNN: $e")),
-         );
-       }
-     } finally {
-       setState(() {
-         _isAnalyzing = false;
-         _image = null;
-       });
-     }
+    if (_image == null || _isAnalyzing || !_isTfliteInitialized) return;
+
+    setState(() {
+      _isAnalyzing = true;
+    });
+
+    try {
+      final String cnnResult = await _tfliteService.runInference(_image!);
+
+      // Bersihkan Markdown
+      final cleanedResult = _cleanResultText(cnnResult);
+
+      // Simpan ke Realtime Database
+      await _saveDetectionToRealtimeDB(
+        method: "CNN",
+        label: cleanedResult.substring(0, cleanedResult.length > 100 ? 100 : cleanedResult.length),
+        confidence: 1.0,
+      );
+
+      // Buat teks UI rapi tanpa Markdown
+      final String formattedCnnOutput = """
+      ⚡ Hasil Deteksi Cepat (Offline)
+      
+      Berdasarkan analisis model CNN pada perangkat Anda, gambar ini teridentifikasi sebagai:
+      
+      $cleanedResult
+      
+      Catatan:
+      - Hasil ini adalah klasifikasi awal dan tidak memberikan detail penanganan.
+      - Untuk analisis mendalam mengenai gejala, penyebab, dan solusi, silakan gunakan tombol "DETEKSI GEMINI (ONLINE)".
+      """;
+
+      if (mounted) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => HasilPage(
+              result: DetectionResult(
+                rawGeminiOutput: formattedCnnOutput,
+                method: "CNN",
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error Deteksi CNN: $e")),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAnalyzing = false;
+          _image = null;
+        });
+      }
+    }
   }
 
 
-  // --- 3. Ambil Gambar (Kamera) - Hanya untuk Preview (Kode lama) ---
+  // 🔹 Tambahan baru: Simpan hasil ke Realtime Database
+  Future<void> _saveDetectionToRealtimeDB({
+    required String method,
+    required String label,
+    required double confidence,
+  }) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print("⚠️ Tidak ada user yang login, data tidak disimpan");
+        return;
+      }
+
+      final DatabaseReference dbRef = FirebaseDatabase.instance
+          .ref("users/${user.uid}/detections")
+          .push();
+
+      // Simpan versi ringkas (label) dan versi lengkap (fullText)
+      await dbRef.set({
+        'method': method,
+        'label': label.length > 100 ? label.substring(0, 100) + '...' : label, // ringkas untuk list
+        'fullText': label, // simpan seluruh teks lengkap
+        'confidence': confidence,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+
+      print("✅ Hasil deteksi tersimpan lengkap di Realtime Database milik user: ${user.uid}");
+    } catch (e) {
+      print("❌ Gagal menyimpan ke Realtime Database: $e");
+    }
+  }
+
+
   Future<void> _takePhoto() async {
     if (!_isCameraInitialized || _cameraController == null || _cameraController!.value.isTakingPicture || _isAnalyzing) {
       return;
     }
-
     try {
       final XFile imageFile = await _cameraController!.takePicture();
-      // Hanya update state untuk menampilkan preview, tidak langsung deteksi
       setState(() {
         _image = File(imageFile.path);
       });
@@ -223,32 +352,27 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
     }
   }
 
-  // --- 4. Ambil Gambar (Galeri) - Hanya untuk Preview (Kode lama) ---
   Future<void> _pickFromGallery() async {
     if (_isAnalyzing) return;
-    
     final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-
     if (pickedFile != null) {
-      // Hanya update state untuk menampilkan preview, tidak langsung deteksi
       setState(() {
         _image = File(pickedFile.path);
       });
     }
   }
 
-  // --- 5. Widget Build (Modifikasi Tombol Diagnosa) ---
   @override
   Widget build(BuildContext context) {
     const Color primaryColor = Color(0xFF064E3B);
     final w = MediaQuery.of(context).size.width;
     final circleSize = w * 0.55;
 
-    // Tampilkan Indikator Loading di tengah
     if (_isAnalyzing) {
       return Scaffold(
         appBar: AppBar(
           backgroundColor: primaryColor,
+          // Teks UI: Sudah Bahasa Indonesia
           title: const Text("Detektor Daun Melon", style: TextStyle(color: Colors.white)),
         ),
         body: const Center(
@@ -256,8 +380,9 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               CircularProgressIndicator(color: primaryColor),
-              SizedBox(height: 12),
-              Text("Menganalisis daun dengan AI/CNN...", style: TextStyle(fontSize: 15, color: primaryColor)),
+              SizedBox(height: 16),
+              // Teks UI: Sudah Bahasa Indonesia
+              Text("Menganalisis gambar...", style: TextStyle(fontSize: 16, color: primaryColor)),
             ],
           ),
         ),
@@ -267,6 +392,7 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
     return Scaffold(
       appBar: AppBar(
         backgroundColor: primaryColor,
+        // Teks UI: Sudah Bahasa Indonesia
         title: const Text(
           "Detektor Daun Melon",
           style: TextStyle(color: Colors.white),
@@ -279,6 +405,7 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const SizedBox(height: 12),
+            // Teks UI: Sudah Bahasa Indonesia
             Text(
               "Deteksi penyakit daun melon secara cepat dengan AI.",
               style: TextStyle(
@@ -288,104 +415,87 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-
-            // Bagian Stack untuk Kamera Transparan (Kode lama)
             Stack(
-               alignment: Alignment.topCenter,
-               children: [
-                  // 1. Tampilan Kamera
-                  if (_isCameraInitialized && _cameraController != null)
-                    ClipOval(
-                      child: SizedBox(
-                        width: circleSize,
-                        height: circleSize,
-                        child: FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: circleSize,
-                            height: circleSize / _cameraController!.value.aspectRatio,
-                            child: CameraPreview(_cameraController!),
-                          ),
+              alignment: Alignment.center,
+              children: [
+                if (_isCameraInitialized && _cameraController != null && _cameraController!.value.isInitialized)
+                  ClipOval(
+                    child: SizedBox(
+                      width: circleSize,
+                      height: circleSize,
+                      child: FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: circleSize,
+                          height: _cameraController!.value.aspectRatio != 0
+                              ? circleSize / _cameraController!.value.aspectRatio
+                              : circleSize, // fallback aman kalau aspectRatio 0
+                          child: CameraPreview(_cameraController!),
                         ),
                       ),
-                    )
-                  else
-                    // Placeholder saat kamera loading/gagal
-                    Container(
-                      width: circleSize,
-                      height: circleSize,
-                      decoration: const BoxDecoration(
-                        color: primaryColor,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.camera_alt_rounded, size: 42, color: Colors.white),
-                      ),
                     ),
-
-                  // 2. Button Overlay 
-                  GestureDetector(
-                    onTap: _takePhoto, // Hanya memanggil fungsi ambil foto (preview)
-                    child: Container(
-                      width: circleSize,
-                      height: circleSize,
-                      decoration: BoxDecoration(
-                        color: primaryColor.withOpacity(0.4), 
-                        shape: BoxShape.circle,
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 8,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(Icons.camera_alt_rounded,
-                              size: 42, color: Colors.white),
-                          SizedBox(height: 8),
-                          Text(
-                            "Ambil Gambar",
-                            style: TextStyle(color: Colors.white, fontSize: 16),
-                          ),
-                        ],
-                      ),
+                  )
+                else
+                  Container(
+                    width: circleSize,
+                    height: circleSize,
+                    decoration: const BoxDecoration(
+                      color: Colors.black87,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.camera_alt_rounded, size: 42, color: Colors.white),
                     ),
                   ),
-               ],
+                GestureDetector(
+                  onTap: _takePhoto,
+                  child: Container(
+                    width: circleSize,
+                    height: circleSize,
+                    decoration: BoxDecoration(
+                      color: primaryColor.withOpacity(0.4),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(Icons.camera_alt_outlined, size: 48, color: Colors.white),
+                        SizedBox(height: 8),
+                        Text(
+                          "Ambil Gambar",
+                          style: TextStyle(
+                              color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-
             const SizedBox(height: 18),
-
-            // Tombol upload dari galeri (Kode lama)
             SizedBox(
-              width: w * 0.65,
+              width: w * 0.7,
               child: OutlinedButton.icon(
-                onPressed: _pickFromGallery, 
+                onPressed: _pickFromGallery,
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: primaryColor),
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
                 icon: const Icon(Icons.image, color: primaryColor),
+                // Teks UI: Sudah Bahasa Indonesia
                 label: const Text(
                   "Unggah Dari Galeri",
                   style: TextStyle(color: primaryColor, fontSize: 15),
                 ),
               ),
             ),
-
             const SizedBox(height: 28),
-
-            // Preview hasil gambar & Tombol Diagnosa
             if (_image != null) ...[
+              // Teks UI: Sudah Bahasa Indonesia
               const Text(
-                "Hasil Gambar:",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                "Gambar Terpilih:",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 10),
               ClipRRect(
@@ -393,24 +503,22 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
                 child: Image.file(
                   _image!,
                   width: w * 0.8,
+                  height: w * 0.8,
                   fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(height: 20),
-              
-              // --- Tombol 1: Deteksi Gemini (AI Generatif - Online) ---
               SizedBox(
-                width: w * 0.65,
+                width: w * 0.7,
                 child: ElevatedButton.icon(
-                  onPressed: _performDetectionGemini, // Panggil Gemini
+                  onPressed: _performDetectionGemini,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryColor,
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   icon: const Icon(Icons.psychology, color: Colors.white),
+                  // Teks UI: Sudah Bahasa Indonesia
                   label: const Text(
                     "DETEKSI GEMINI (ONLINE)",
                     style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
@@ -418,48 +526,47 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
                 ),
               ),
               const SizedBox(height: 10),
-              
-              // --- Tombol 2: Klasifikasi CNN (TFLite - Offline) ---
-              if (_isTfliteInitialized) 
+              if (_isTfliteInitialized)
                 SizedBox(
-                  width: w * 0.65,
+                  width: w * 0.7,
                   child: OutlinedButton.icon(
-                    onPressed: _performDetectionCNN, // Panggil TFLite CNN
+                    onPressed: _performDetectionCNN,
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Colors.deepOrange),
                       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                    icon: const Icon(Icons.speed, color: Colors.deepOrange),
+                    icon: const Icon(Icons.speed_rounded, color: Colors.deepOrange),
+                    // Teks UI: Sudah Bahasa Indonesia
                     label: const Text(
                       "KLASIFIKASI CNN (OFFLINE)",
                       style: TextStyle(color: Colors.deepOrange, fontSize: 14),
                     ),
                   ),
                 )
-              else 
-                const Text("TFLite Model Loading...", style: TextStyle(color: Colors.grey)),
-
+              else
+              // Teks UI: Sudah Bahasa Indonesia
+                const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: Text("Model offline sedang dimuat...", style: TextStyle(color: Colors.grey)),
+                ),
               const SizedBox(height: 28),
             ],
-
-            // Key Features (Kode lama)
-            _buildSectionTitle("Key Features", primaryColor),
+            // Teks UI: Sudah Bahasa Indonesia
+            _buildSectionTitle("Fitur Utama", primaryColor),
             const SizedBox(height: 8),
-            _featureCard(Icons.auto_awesome, "AI Powered",
-                "Advanced machine learning detection"),
-            _featureCard(Icons.healing, "Treatment Tips",
-                "Get care suggestions for healthy leaves"),
-            _featureCard(Icons.speed, "Offline CNN",
-                "Fast classification using TFLite"), // Fitur TFLite baru
-
+            // Teks UI: Sudah Bahasa Indonesia
+            _featureCard(Icons.auto_awesome, "Analisis Detail AI", "Dapatkan penjelasan lengkap dari Gemini AI."),
+            _featureCard(Icons.healing, "Saran Perawatan", "Solusi dan tips pencegahan penyakit."),
+            _featureCard(Icons.wifi_off, "Mode Offline Cepat", "Klasifikasi instan tanpa koneksi internet."),
             const SizedBox(height: 20),
-            _buildSectionTitle("Tips", primaryColor),
+            // Teks UI: Sudah Bahasa Indonesia
+            _buildSectionTitle("Tips Akurasi", primaryColor),
             const SizedBox(height: 8),
+            // Teks UI: Sudah Bahasa Indonesia
             const Text(
-              "Pastikan daunnya fokus dan terang benderang untuk hasil yang lebih akurat.",
-              style: TextStyle(fontSize: 14),
+              "Pastikan gambar daun fokus, mendapat cahaya yang cukup, dan tidak blur untuk hasil deteksi terbaik.",
+              style: TextStyle(fontSize: 14, color: Colors.black54),
               textAlign: TextAlign.center,
             ),
           ],
@@ -468,17 +575,12 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
     );
   }
 
-  // ... (Helper methods _buildSectionTitle dan _featureCard tetap sama)
   Widget _buildSectionTitle(String title, Color color) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Text(
         title,
-        style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          color: color,
-        ),
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
       ),
     );
   }
@@ -490,11 +592,10 @@ class _DetectorPageState extends State<DetectorPage> with WidgetsBindingObserver
       elevation: 2,
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: Colors.teal.shade50,
+          backgroundColor: const Color(0xFF064E3B).withOpacity(0.1),
           child: Icon(icon, color: const Color(0xFF064E3B)),
         ),
-        title: Text(title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
         subtitle: Text(subtitle, style: const TextStyle(fontSize: 13)),
       ),
     );

@@ -1,0 +1,83 @@
+{
+  "project_info": {
+    "project_number": "414521075405",
+    "firebase_url": "https://tadd-2c10d-default-rtdb.firebaseio.com",
+    "project_id": "tadd-2c10d",
+    "storage_bucket": "tadd-2c10d.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:414521075405:android:94fafe6ddf0fc5876bab84",
+        "android_client_info": {
+          "package_name": "com.example.melonguard"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "414521075405-sbpho2gp2h6beiibue1gvll4j31843fv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBuFWWWK3klt76aon40zbITz37a4ehPXes"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "414521075405-sbpho2gp2h6beiibue1gvll4j31843fv.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "414521075405-bl4g6ku21q4djvfbi91qlbokclq88jmf.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.melonguard"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:414521075405:android:1af290b5a924f0686bab84",
+        "android_client_info": {
+          "package_name": "com.example.ta"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "414521075405-sbpho2gp2h6beiibue1gvll4j31843fv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBuFWWWK3klt76aon40zbITz37a4ehPXes"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "414521075405-sbpho2gp2h6beiibue1gvll4j31843fv.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "414521075405-bl4g6ku21q4djvfbi91qlbokclq88jmf.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.melonguard"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

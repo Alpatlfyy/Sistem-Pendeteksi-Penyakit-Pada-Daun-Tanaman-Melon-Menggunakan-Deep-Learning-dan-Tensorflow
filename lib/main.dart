@@ -1,11 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'firebase_options.dart';
+
 import 'splash.dart';
+import 'login.dart';
+import 'register.dart';
 import 'detector.dart';
 import 'hasil.dart';
 import 'history.dart';
 import 'info.dart';
+import 'hasil_page.dart' hide HasilPage;
 
-void main() {
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const MyApp());
 }
 
@@ -14,10 +26,10 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return const MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Melon Leaf Detector',
-      home: const SplashScreenWrapper(),
+      home: SplashScreenWrapper(),
     );
   }
 }
@@ -35,7 +47,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 3), () async {
       setState(() {
         _isLoading = false;
       });
@@ -47,7 +59,13 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
     if (_isLoading) {
       return const SplashScreen();
     } else {
-      return const MainNavigation();
+      // cek apakah user sudah login
+      User? user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        return const MainNavigation();
+      } else {
+        return const LoginPage();
+      }
     }
   }
 }
@@ -111,3 +129,4 @@ class _MainNavigationState extends State<MainNavigation> {
     );
   }
 }
+
