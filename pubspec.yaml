@@ -31,21 +31,32 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
+  # Ikon default iOS
   cupertino_icons: ^1.0.8
-  image_picker: ^1.0.0
-  camera: ^0.10.5+9
+
+  # Kamera & gambar
+  image_picker: ^1.1.1
+  camera: ^0.11.0+2
+  image: ^4.3.0
+
+  # AI & model TensorFlow
   google_generative_ai: ^0.4.3
-  tflite_flutter: 0.11.0
-  image: ^4.0.1
-  firebase_core: ^2.27.1 # Gunakan versi terbaru yang stabil
-  cloud_firestore: ^4.15.9
-  firebase_auth: ^4.17.9
-  firebase_database: ^10.3.0
+  tflite_flutter: ^0.11.0
+
+  # Firebase (versi terbaru dan saling cocok)
+  firebase_core: ^3.7.0
+  firebase_auth: ^5.3.0
+  firebase_database: ^11.3.0
+  cloud_firestore: ^5.4.4
+  firebase_storage: ^12.3.0
+
+  # UI & chart
   google_nav_bar: ^5.0.6
   fl_chart: ^0.66.0
   intl: ^0.19.0
+  google_fonts: ^6.2.1
+  animate_do: ^3.1.2
+
 
 
 dev_dependencies:
@@ -73,6 +84,12 @@ flutter:
     - assets/model/model_melon.tflite
     - assets/model/labels.txt
     - assets/images/default_profile.png
+    - assets/images/leaf_spot.jpg
+    - assets/images/leaf_blight.jpeg
+    - assets/images/kutu_kebul.jpg
+    - assets/images/powdery_mildew.jpg
+    - assets/images/healthy_leaf.jpg
+
 
   # To add assets to your application, add an assets section, like this:
   # assets:

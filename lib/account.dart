@@ -104,7 +104,7 @@ class _AccountPageState extends State<AccountPage> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const InfoPage()),
+                MaterialPageRoute(builder: (context) => const InfoPage(fullname: '', email: '', profileImageUrl: '',)),
               );
             },
           ),

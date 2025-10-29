@@ -6,12 +6,12 @@ import 'firebase_options.dart';
 import 'splash.dart';
 import 'login.dart';
 import 'register.dart';
+import 'landing_page.dart';
 import 'detector.dart';
 import 'hasil.dart';
 import 'history.dart';
 import 'info.dart';
 import 'hasil_page.dart' hide HasilPage;
-
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,7 +59,6 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
     if (_isLoading) {
       return const SplashScreen();
     } else {
-      // cek apakah user sudah login
       User? user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         return const MainNavigation();
@@ -80,11 +79,12 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = const [
-    DetectorPage(),
-    HasilPage(),
-    HistoryPage(),
-    InfoPage(),
+  final List<Widget> _pages = [
+    LandingPage(fullname: '', onTabChange: (int p1) {  },),
+    const DetectorPage(),
+    const HasilPage(),
+    const HistoryPage(),
+    const InfoPage(fullname: '', email: '', profileImageUrl: '',),
   ];
 
   void _onItemTapped(int index) {
@@ -95,38 +95,108 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
+    final Color primaryColor = const Color(0xFF064E3B);
+
     return Scaffold(
+      backgroundColor: Colors.white,
+      extendBody: true, // biar tombol boleh overlap bawah
       body: IndexedStack(
         index: _selectedIndex,
         children: _pages,
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        selectedItemColor: const Color(0xFF064E3B),
-        unselectedItemColor: Colors.grey,
-        showUnselectedLabels: true,
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.camera_alt_rounded),
-            label: "Camera",
+      // Bottom nav custom
+      bottomNavigationBar: Container(
+        height: 72, // tinggi dikontrol manual agar tidak overflow
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(0),
+            topRight: Radius.circular(0),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.insert_chart_outlined_rounded),
-            label: "Results",
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            // Item kiri-kanan
+            Positioned.fill(
+              top: 10,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildNavItem(Icons.home_rounded, "Home", 0, primaryColor),
+                  _buildNavItem(Icons.bar_chart_rounded, "Result", 2, primaryColor),
+                  const SizedBox(width: 50), // untuk space tengah tombol kamera
+                  _buildNavItem(Icons.history_rounded, "History", 3, primaryColor),
+                  _buildNavItem(Icons.info_outline_rounded, "Info", 4, primaryColor),
+                ],
+              ),
+            ),
+
+            // Tombol kamera tengah
+            Positioned(
+              top: -32, // posisi lebih rendah, tapi tidak overflow
+              child: GestureDetector(
+                onTap: () => _onItemTapped(1),
+                child: Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: primaryColor,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryColor.withOpacity(0.35),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem(
+      IconData icon, String label, int index, Color primaryColor) {
+    final bool isSelected = _selectedIndex == index;
+    return GestureDetector(
+      onTap: () => _onItemTapped(index),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            color: isSelected ? primaryColor : Colors.grey.shade700,
+            size: isSelected ? 26 : 24,
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.history),
-            label: "History",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.info_outline),
-            label: "Info",
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? primaryColor : Colors.grey.shade700,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              fontSize: 12,
+            ),
           ),
         ],
       ),
     );
   }
 }
-

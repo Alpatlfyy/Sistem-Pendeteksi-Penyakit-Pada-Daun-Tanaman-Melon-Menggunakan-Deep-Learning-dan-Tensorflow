@@ -1,27 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 
 import 'change_password.dart';
 import 'login.dart';
 
 class InfoPage extends StatefulWidget {
-  const InfoPage({super.key});
+  final String fullname;
+  final String email;
+  final String profileImageUrl;
+
+  const InfoPage({
+    super.key,
+    required this.fullname,
+    required this.email,
+    required this.profileImageUrl,
+  });
 
   @override
   State<InfoPage> createState() => _InfoPageState();
 }
 
 class _InfoPageState extends State<InfoPage> {
-  final user = FirebaseAuth.instance.currentUser;
-  final database = FirebaseDatabase.instance.ref();
-
   File? _profileImage;
-  String? fullName;
-  String? email;
-
+  String? fullNameFromDB;
+  String? emailFromDB;
+  String? profileImageFromDB;
+  final user = FirebaseAuth.instance.currentUser;
 
   @override
   void initState() {
@@ -29,24 +37,29 @@ class _InfoPageState extends State<InfoPage> {
     _loadUserData();
   }
 
+  /// Ambil data dari Firebase Realtime Database
   Future<void> _loadUserData() async {
     if (user == null) return;
     final ref = FirebaseDatabase.instance.ref("users/${user!.uid}");
     final snapshot = await ref.get();
+
     if (snapshot.exists) {
-      final data = snapshot.value as Map;
+      final data = Map<String, dynamic>.from(snapshot.value as Map);
       setState(() {
-        fullName = data['fullName'];
-        email = data['email'];
+        fullNameFromDB = data['fullName'] ?? widget.fullname;
+        emailFromDB = data['email'] ?? widget.email;
+        profileImageFromDB = data['profileImage'] ?? widget.profileImageUrl;
       });
     } else {
       setState(() {
-        email = user!.email;
-        fullName = "Pengguna";
+        fullNameFromDB = widget.fullname;
+        emailFromDB = widget.email;
+        profileImageFromDB = widget.profileImageUrl;
       });
     }
   }
 
+  /// Pilih gambar dari galeri
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final pickedImage = await picker.pickImage(source: ImageSource.gallery);
@@ -54,13 +67,58 @@ class _InfoPageState extends State<InfoPage> {
       setState(() {
         _profileImage = File(pickedImage.path);
       });
-      // TODO: upload ke Firebase Storage kalau ingin disimpan permanen
+      await _uploadImage(File(pickedImage.path));
     }
   }
+
+  /// Upload gambar profil ke Firebase Storage
+  Future<void> _uploadImage(File imageFile) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      debugPrint("User belum login, upload dibatalkan");
+      return;
+    }
+
+    try {
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child("profile_images/${user.uid}.jpg");
+
+      // Upload ke Storage
+      await storageRef.putFile(imageFile);
+
+      // Ambil URL download
+      final downloadUrl = await storageRef.getDownloadURL();
+      debugPrint("Download URL berhasil: $downloadUrl");
+
+      // Update di database
+      final ref = FirebaseDatabase.instance.ref("users/${user.uid}");
+      await ref.update({"profileImage": downloadUrl});
+
+      debugPrint("Profile image berhasil disimpan di database!");
+
+      setState(() {
+        profileImageFromDB = downloadUrl;
+      });
+    } catch (e) {
+      debugPrint("Error upload image: $e");
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
     const Color primaryColor = Color(0xFF064E3B);
+
+    final displayName = fullNameFromDB ?? widget.fullname;
+    final displayEmail = emailFromDB ?? widget.email;
+    final displayImage = _profileImage != null
+        ? FileImage(_profileImage!)
+        : (profileImageFromDB != null && profileImageFromDB!.isNotEmpty
+        ? NetworkImage(profileImageFromDB!)
+        : (widget.profileImageUrl.isNotEmpty
+        ? NetworkImage(widget.profileImageUrl)
+        : null)) as ImageProvider?;
 
     return Scaffold(
       appBar: AppBar(
@@ -73,7 +131,6 @@ class _InfoPageState extends State<InfoPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ===================== PROFILE SECTION =====================
             Center(
               child: Column(
                 children: [
@@ -84,10 +141,8 @@ class _InfoPageState extends State<InfoPage> {
                         CircleAvatar(
                           radius: 55,
                           backgroundColor: Colors.grey[200],
-                          backgroundImage: _profileImage != null
-                              ? FileImage(_profileImage!)
-                              : null,
-                          child: _profileImage == null
+                          backgroundImage: displayImage,
+                          child: displayImage == null
                               ? const Icon(Icons.person, size: 60, color: Colors.grey)
                               : null,
                         ),
@@ -100,7 +155,8 @@ class _InfoPageState extends State<InfoPage> {
                               color: primaryColor,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.edit, color: Colors.white, size: 18),
+                            child:
+                            const Icon(Icons.edit, color: Colors.white, size: 18),
                           ),
                         ),
                       ],
@@ -108,32 +164,36 @@ class _InfoPageState extends State<InfoPage> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    fullName ?? "Loading...",
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    displayName,
+                    style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                  Text(email ?? "Loading...", style: const TextStyle(color: Colors.grey)),
+                  Text(displayEmail, style: const TextStyle(color: Colors.grey)),
                   const SizedBox(height: 10),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryColor,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 10),
                     ),
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const ChangePasswordPage()),
+                        MaterialPageRoute(
+                            builder: (context) => const ChangePasswordPage()),
                       );
                     },
-                    icon: const Icon(Icons.lock_outline, color: Colors.white),
-                    label: const Text("Change Password", style: TextStyle(color: Colors.white)),
+                    icon:
+                    const Icon(Icons.lock_outline, color: Colors.white),
+                    label: const Text("Change Password",
+                        style: TextStyle(color: Colors.white)),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 30),
-
-            // ===================== ABOUT APP SECTION =====================
             _buildSectionTitle("Tentang Aplikasi", primaryColor),
             const SizedBox(height: 8),
             const Text(
@@ -143,16 +203,15 @@ class _InfoPageState extends State<InfoPage> {
               style: TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 20),
-
-            // ===================== HOW TO USE =====================
             _buildSectionTitle("Cara Menggunakan", primaryColor),
             const SizedBox(height: 8),
-            _buildStep(Icons.camera_alt, "Step 1", "Take a photo of the melon leaf with the camera"),
-            _buildStep(Icons.hourglass_empty, "Step 2", "Wait for the AI detection results"),
-            _buildStep(Icons.medical_services, "Step 3", "Follow the treatment suggestions that appear"),
+            _buildStep(Icons.camera_alt, "Step 1",
+                "Take a photo of the melon leaf with the camera"),
+            _buildStep(Icons.hourglass_empty, "Step 2",
+                "Wait for the AI detection results"),
+            _buildStep(Icons.medical_services, "Step 3",
+                "Follow the treatment suggestions that appear"),
             const SizedBox(height: 20),
-
-            // ===================== FEATURES =====================
             _buildSectionTitle("Key Features", primaryColor),
             const SizedBox(height: 8),
             _buildFeature(Icons.bolt, "Real-time disease detection"),
@@ -160,8 +219,6 @@ class _InfoPageState extends State<InfoPage> {
             _buildFeature(Icons.history, "History tracking"),
             _buildFeature(Icons.wifi_off, "Offline functionality"),
             const SizedBox(height: 20),
-
-            // ===================== CONTACT =====================
             _buildSectionTitle("Contact & Support", primaryColor),
             const SizedBox(height: 8),
             const Text(
@@ -174,32 +231,30 @@ class _InfoPageState extends State<InfoPage> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 onPressed: () {},
-                child: const Text("Contact Us", style: TextStyle(color: Colors.white)),
+                child:
+                const Text("Contact Us", style: TextStyle(color: Colors.white)),
               ),
             ),
             const SizedBox(height: 20),
-
-            // ===================== APP INFO =====================
             _buildSectionTitle("App Information", primaryColor),
             const SizedBox(height: 8),
             _buildInfoRow("Version", "1.2.0"),
             _buildInfoRow("Size", "45.2 MB"),
             _buildInfoRow("Last Updated", "November 15, 2025"),
             _buildInfoRow("Developer", "AgriTech Solutions"),
-
             const SizedBox(height: 30),
-
-            // ===================== LOGOUT BUTTON =====================
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.redAccent,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 onPressed: () async {
@@ -207,13 +262,15 @@ class _InfoPageState extends State<InfoPage> {
                   if (context.mounted) {
                     Navigator.pushAndRemoveUntil(
                       context,
-                      MaterialPageRoute(builder: (context) => const LoginPage()),
+                      MaterialPageRoute(
+                          builder: (context) => const LoginPage()),
                           (route) => false,
                     );
                   }
                 },
                 icon: const Icon(Icons.logout, color: Colors.white),
-                label: const Text("Logout", style: TextStyle(color: Colors.white)),
+                label: const Text("Logout",
+                    style: TextStyle(color: Colors.white)),
               ),
             ),
           ],
@@ -224,16 +281,19 @@ class _InfoPageState extends State<InfoPage> {
 
   Widget _buildSectionTitle(String title, Color color) {
     return Text(title,
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color));
+        style:
+        TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color));
   }
 
   Widget _buildStep(IconData icon, String title, String subtitle) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape:
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         leading: Icon(icon, color: Colors.teal[700]),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(title,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(subtitle),
       ),
     );
